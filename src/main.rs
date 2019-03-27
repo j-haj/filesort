@@ -1,10 +1,12 @@
 extern crate chrono;
 extern crate chrono_tz;
 extern crate clap;
+extern crate rayon;
 
 use chrono::{Date, Datelike, DateTime, NaiveDateTime};
 use chrono::offset::Local;
 use clap::{Arg, App};
+use rayon::prelude::*;
 use std::collections::HashSet;
 use std::io;
 use std::fs::{self, DirEntry};
@@ -18,8 +20,10 @@ fn move_files(dir: &Path, should_move: &Fn(&Path)->bool,
               move_to: &Fn(&DirEntry)->Result<PathBuf, ()>, should_recurse: bool)
               -> io::Result<()> {
     if dir.is_dir() {
-        for entry in fs::read_dir(dir).unwrap() {
-            let entry = entry.unwrap();
+        // TODO: The issue is we are adding directories, then seeing them with read_dir and adding
+        // to them recursively!
+        fs::read_dir(dir).expect("Failed to read directory contents").for_each(|e| {
+            let entry = e.unwrap();
             let path = entry.path();
             if path.is_dir() && should_recurse {
                 move_files(&path, should_move, move_to, should_recurse)
@@ -27,25 +31,26 @@ fn move_files(dir: &Path, should_move: &Fn(&Path)->bool,
             } else {
                 if should_move(&entry.path()) {
                     if let Ok(new_path) = move_to(&entry) {
-                        println!("Attempting move from {:?} to {:?}",
-                                 path, new_path);
-                        fs::create_dir_all(&new_path.parent().unwrap());
-                        fs::rename(&path, &new_path).unwrap();
+                        fs::create_dir_all(&new_path.parent()
+                                                    .expect(&format!("Failed with {:?}",
+                                                                     new_path.parent())));
+                        fs::rename(&path, &new_path).expect(&format!("Failed to rename to {:?}",
+                                                                     new_path));
                     }
                 }
             }
-        }
+        });
     }
     Ok(())
 }
 
 fn is_image_file(path: &Path) -> bool {
-    let image_extensions : HashSet<&str> = vec!["jpg", "jpeg", "tiff"]
+    let image_extensions : HashSet<&str> = vec!["jpg", "jpeg", "tiff", "JPG", "JPEG", "TIFF", "mov", "MOV"]
         .into_iter()
         .collect();
     if path.is_file() {
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                return image_extensions.contains(&ext);
+            return image_extensions.contains(&ext);
         }
     }
     false
@@ -58,7 +63,6 @@ fn create_date_path(from: &DirEntry) -> Result<PathBuf, ()> {
                                    date.year(),
                                    date.month(),
                                    date.day());
-            println!("Using path: {}", ymd_path);
             let mut buf = from
                 .path()
                 .parent()
@@ -113,4 +117,5 @@ fn main() {
              should_recurse);
 
     let _ = move_files(directory, &is_image_file, &create_date_path, should_recurse);
+    println!("Done.");
 }
