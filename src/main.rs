@@ -109,7 +109,7 @@ fn main() {
              .short("r")
              .long("recursive")
              .help("Dictates whether directories are recursively traversed")
-             .default_value("true"))
+             .default_value("false"))
         .get_matches();
     let directory = Path::new(matches.value_of("directory").unwrap());
     let should_recurse = matches.value_of("recursive").unwrap() == "true";
